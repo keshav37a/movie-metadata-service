@@ -6,11 +6,21 @@ const axios = require('axios').default;
 
 let mergedFileData = [];
 
-module.exports.searchByParameters = function(req, res){
+module.exports.searchByParameters = async function(req, res){
     console.log(req.query);
+    let queryParams = req.query;
+
+    if(mergedFileData.length==0){
+        console.log("len 0");
+        let localFileData = await readFromFiles();
+        await mergeBothObjects(localFileData);
+    }
+
+    let foundMoviesArray = searchByParameter(queryParams);
     console.log('home in movies_controller_api called');
     readFromFiles();
     return res.status(200).json({
+        data: foundMoviesArray,
         message: 'home in movies_controller_api called'
     });
 }
@@ -94,17 +104,16 @@ let searchMovieById = function(id){
 let mergeBothObjects = async function(localFileData){
     console.log('merge both objects called');
     let movieArrayServer = [];
+
     for(let i=0; i<localFileData.length; i++){
         let imdbId = localFileData[i].imdbId;
         let movieObjectFoundServer = await readMovieFromServer(imdbId);
         movieArrayServer.push(movieObjectFoundServer);
     }
-    // console.log(movieArrayServer);
 
     for(let i=0; i<localFileData.length; i++){
         let elementLocal = localFileData[i];
         let elementServer = movieArrayServer[i];
-
         
         let director = elementServer['Director'];
         let directorArray = director.split(',');
@@ -118,8 +127,6 @@ let mergeBothObjects = async function(localFileData){
         let writerArray = writer.split(',');
         elementServer['Writer'] = writerArray;
         
-        
-        // console.log(elementServer);
         for(let key in elementLocal){
             if(key=="title" || key=="description"){
                 continue;
@@ -134,21 +141,48 @@ let mergeBothObjects = async function(localFileData){
                 obj['Source']="Local Database"
                 obj['Value'] = `${elementLocal.userrating.countTotal} stars`
                 elementServer["Ratings"].push(obj);
-                // elementServer.Ratings.push(obj);
             }
             else{
                 elementServer[`${key}`] = elementLocal[`${key}`];
             }
-            // console.log(key);
         }
         mergedFileData.push(elementServer);
     }
-    // console.log(movieArrayServer);
-    
 }
 
-// let getAvgOfItems = function(obj){
-//     let numUsers = Object.keys(obj).length-1;
-//     let countTotal = obj.countTotal;
-//     return countTotal/numUsers;
-// }
+let searchByParameter = function(queryParams){
+
+    let foundArray = [];
+    for(let i=0; i<mergedFileData.length; i++){
+        let movieElement = mergedFileData[i];
+        let foundAll = true;
+        Object.entries(queryParams).forEach((entry)=>{
+            console.log(entry);
+
+            let query = entry[0];
+            let value = entry[1];
+
+            let movieVal = movieElement[query];
+
+            if(Array.isArray(movieVal)){
+                let isPresent = false;
+                movieVal.forEach((element)=>{
+                    if(element==value){
+                        isPresent = true;
+                    }
+                })
+                if(isPresent==false)
+                    foundAll = false;
+            }
+            else if(movieVal!=value){
+                foundAll = false;
+            }
+        })
+        if(foundAll){
+            foundArray.push(movieElement);
+            console.log("found");
+        }
+    }
+    return foundArray;
+    // console.log(foundArray);
+}
