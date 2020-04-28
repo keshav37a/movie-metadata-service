@@ -12,4 +12,4 @@ For example `npm install express`
 The following dependencies need to be installed before running the project\
 *express\
 *nodemon\
-*axios\
+*axios
