@@ -6,7 +6,8 @@ const axios = require('axios').default;
 
 let mergedFileData = [];
 
-module.exports.home = function(req, res){
+module.exports.searchByParameters = function(req, res){
+    console.log(req.query);
     console.log('home in movies_controller_api called');
     readFromFiles();
     return res.status(200).json({
