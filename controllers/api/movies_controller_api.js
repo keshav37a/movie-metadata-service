@@ -3,13 +3,12 @@ const path = require('path');
 const keys = require('../../keys');
 const axios = require('axios').default;
 
-let localFileData = [];
+
+let mergedFileData = [];
 
 module.exports.home = function(req, res){
     console.log('home in movies_controller_api called');
-
     readFromFiles();
-
     return res.status(200).json({
         message: 'home in movies_controller_api called'
     });
@@ -18,43 +17,35 @@ module.exports.home = function(req, res){
 module.exports.getMergedMovieObject = async function(req, res){
     console.log('get merged movie object called');
     let paramId = req.params.id;
+
     //The id can be both imdb or local id. So search by both the ids
-    if(localFileData.length==0){
+    if(mergedFileData.length==0){
         console.log("len 0");
-        await readFromFiles();
+        let localFileData = await readFromFiles();
+        await mergeBothObjects(localFileData);
     }
-    let movieObjectFoundLocal =  searchMovieByIdFromLocal(paramId);
-    console.log(movieObjectFoundLocal);
-    if(movieObjectFoundLocal){
-        console.log(movieObjectFoundLocal);
+    
+    console.log(mergedFileData);
 
-        let imdbId = movieObjectFoundLocal.imdbId;
-        let movieObjectFoundServer = await readMovieFromServer(imdbId);
-
-        if(movieObjectFoundServer.isSuccessful){
-
-            let mergedMovieObject = mergeBothObjects(movieObjectFoundLocal, movieObjectFoundServer);
-
-            return res.status(200).json({
-                data: obj.response,
-                message: `getMergedMovieObject called for id ${paramId}`
-            });
-        }
-        else{
-            return res.status(500).json({
-                message: obj.response
-            });
-        }
+    let movieObjectFound =  searchMovieById(paramId);
+    // console.log(movieObjectFoundLocal);
+    if(movieObjectFound){
+        return res.status(200).json({
+            data: movieObjectFound,
+            message: `getMergedMovieObject called for id ${paramId}`
+        });
     }
     else{
         return res.status(404).json({
             message: 'The id was not found on the server'
         });
     }
+
 }
 
 let readFromFiles = async function(){
     console.log('read from files called');
+    let localFileData = [];
     try{
         let moviesPath = path.join(__dirname, '../../movies');
         let fileNames = await fs.readdirSync(moviesPath);
@@ -64,6 +55,7 @@ let readFromFiles = async function(){
             let data = JSON.parse(rawData);
             localFileData.push(data);
         })
+        return localFileData;
     }
     catch(err){
         console.log(`${err}`);
@@ -71,42 +63,91 @@ let readFromFiles = async function(){
 }
 
 let readMovieFromServer = async function(imdbId){
+    console.log('readMovieFromServer called');
     let api_key = keys;
     let url = `http://www.omdbapi.com/?i=${imdbId}&apikey=${api_key}&plot=full`;
     console.log(url);
-    let isSuccessful = false;
-    let obj = {};
     try{
         let response = await axios.get(url);
         
         if(response){
-            isSuccessful = true;
-            obj.response = response.data;
-            obj.isSuccessful = isSuccessful;
-            return obj;
+            return response.data;
         }
     }
     catch(err){
         console.log('error');
-        isSuccessful = false;
-        obj.response = err;
-        obj.isSuccessful = isSuccessful;
-        return obj;
+        return false;
     }
 }
 
-let searchMovieByIdFromLocal = function(id){
-    for(let i=0; i<localFileData.length; i++){
-        let element = localFileData[i];
-        console.log(`passedid = ${id} element.id=${element.id} element.imdbId=${element.imdbId}`);
+let searchMovieById = function(id){
+    for(let i=0; i<mergedFileData.length; i++){
+        let element = mergedFileData[i];
         if(element.id==id || element.imdbId==id){
-            console.log("found");
             return element;
         }
     }
     return false;
 }
 
-let mergeBothObjects = function(local, server){
+let mergeBothObjects = async function(localFileData){
+    console.log('merge both objects called');
+    let movieArrayServer = [];
+    for(let i=0; i<localFileData.length; i++){
+        let imdbId = localFileData[i].imdbId;
+        let movieObjectFoundServer = await readMovieFromServer(imdbId);
+        movieArrayServer.push(movieObjectFoundServer);
+    }
+    // console.log(movieArrayServer);
+
+    for(let i=0; i<localFileData.length; i++){
+        let elementLocal = localFileData[i];
+        let elementServer = movieArrayServer[i];
+
+        
+        let director = elementServer['Director'];
+        let directorArray = director.split(',');
+        elementServer['Director'] = directorArray;
+
+        let actors = elementServer['Actors'];
+        let actorArray = actors.split(',');
+        elementServer['Actors'] = actorArray;
+
+        let writer = elementServer['Writer'];
+        let writerArray = writer.split(',');
+        elementServer['Writer'] = writerArray;
+        
+        
+        // console.log(elementServer);
+        for(let key in elementLocal){
+            if(key=="title" || key=="description"){
+                continue;
+            }
+            else if(key=="duration"){
+                delete elementServer.Runtime
+                // console.log(elementLocal.duration);
+                elementServer["duration"] = `${elementLocal.duration}`;
+            }
+            else if(key=="userrating"){
+                let obj = {};
+                obj['Source']="Local Database"
+                obj['Value'] = `${elementLocal.userrating.countTotal} stars`
+                elementServer["Ratings"].push(obj);
+                // elementServer.Ratings.push(obj);
+            }
+            else{
+                elementServer[`${key}`] = elementLocal[`${key}`];
+            }
+            // console.log(key);
+        }
+        mergedFileData.push(elementServer);
+    }
+    // console.log(movieArrayServer);
     
 }
+
+// let getAvgOfItems = function(obj){
+//     let numUsers = Object.keys(obj).length-1;
+//     let countTotal = obj.countTotal;
+//     return countTotal/numUsers;
+// }
